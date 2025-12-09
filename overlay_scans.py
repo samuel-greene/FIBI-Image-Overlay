@@ -1,7 +1,7 @@
 import numpy as np
 from PIL import Image
-from tqdm import tqdm
 import time
+from tqdm import tqdm
 import sys
 
 from skimage.registration import phase_cross_correlation
@@ -48,8 +48,17 @@ def load_image_any(path):
     # Otherwise normal image
     return np.array(Image.open(path))
 
-def create_overlay(backlit_filepath, fibi_filepath, output_filepath = "output.tiff", downsample_factor = 2, upsample_factor = 10, fake_mode=False, progress_callback=None):
+def create_overlay(
+        backlit_filepath,
+        fibi_filepath,
+        output_filepath = "output.tiff",
+        downsample_factor = 2,
+        upsample_factor = 10,
+        fake_mode=False,
+        progress_callback=None,
+        backlit_opacity=0.25):
     if fake_mode:
+        print(backlit_opacity)
         for i in tqdm(range(14), desc="Progress [TESTING]"):
             time.sleep(0.05)
             if progress_callback:
@@ -217,7 +226,7 @@ def create_overlay(backlit_filepath, fibi_filepath, output_filepath = "output.ti
 
     back_n = norm01(back_rgb)
     auto_aligned_n = norm01(auto_aligned_full)
-    overlay = 0.25 * back_n + 0.75 * auto_aligned_n
+    overlay = backlit_opacity * back_n + (1-backlit_opacity) * auto_aligned_n
 
     # ---- SAVE FINAL TIFF ----
     # Convert overlay_blend back to 0-255 uint8 for saving
@@ -268,28 +277,29 @@ def main():
         root.lift()
         root.focus_force()
 
-    def run_overlay():
-        if not (backlit_path and fibi_path and output_path):
-            messagebox.showerror("Missing Files", "Please select all three files.")
-            return
-        try:
-            create_overlay(backlit_path, fibi_path, output_path)
-            messagebox.showinfo("Success", "Overlay created successfully!")
-        except Exception as e:
-            messagebox.showerror("ERROR", str(e))
-
     import threading
 
     def run_overlay_threaded():
         def worker():
             try:
-                create_overlay(
-                    backlit_path,
-                    fibi_path,
-                    output_path,
-                    fake_mode=True,
-                    progress_callback=lambda p: progress_var.set(p)
-                )
+                if backlit_path and fibi_path:
+                    create_overlay(
+                        backlit_path,
+                        fibi_path,
+                        output_path,
+                        fake_mode=False,
+                        progress_callback=lambda p: progress_var.set(p),
+                        backlit_opacity=my_slider.get()
+                    )
+                else:
+                    create_overlay(
+                        backlit_path,
+                        fibi_path,
+                        output_path,
+                        fake_mode=True,
+                        progress_callback=lambda p: progress_var.set(p),
+                        backlit_opacity=my_slider.get()
+                    )
                 progress_var.set(100)
                 messagebox.showinfo("Success", "Overlay created successfully!")
             except Exception as e:
@@ -334,6 +344,18 @@ def main():
 
     output_button = ttk.Button(left, text="Select Output File", command=pick_output, width=25)
     output_button.pack(pady=5)
+
+    def update_label(event=None):
+        value = slider.get()
+        label.config(text=f"Backlit Opacity: {value:.1f}%")  # ← 2 decimal places
+    
+    value = tk.DoubleVar()
+
+    slider = ttk.Scale(left, from_=0, to=100, length=200, variable=value, command=update_label)
+    slider.pack(pady=5)
+
+    label = ttk.Label(left, text="Backlit Opacity: 0.0")
+    label.pack()
 
     run_btn = ttk.Button(left, text="Create Overlay", command=run_overlay_threaded, width=25)
     run_btn.pack(pady=10)
